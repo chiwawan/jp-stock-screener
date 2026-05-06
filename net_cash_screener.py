@@ -244,7 +244,7 @@ def run_screener(tickers, label, output_filename):
     positive = df[df["net_cash_ratio"] > 0]
     print(f"\nネットキャッシュプラス銘柄: {len(positive)} / {len(df)} 銘柄")
 
-    output_path = f"/Volumes/SanDisk SSD/private/90.work/10.claude/10.work/トレーダー/{output_filename}"
+    output_path = f"/Volumes/SanDisk SSD/private/90.work/10.claude/10.work/02.トレーダー/{output_filename}"
     df.to_csv(output_path, index=False, encoding="utf-8-sig")
     print(f"CSVに保存しました: {output_filename}")
 
