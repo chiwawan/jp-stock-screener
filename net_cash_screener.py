@@ -158,37 +158,78 @@ JAPAN_TICKERS = [
 ]
 
 
+def _get_value(series, keys):
+    """複数のキー候補から最初に見つかった値を返す"""
+    for key in keys:
+        if key in series.index and pd.notna(series[key]):
+            return float(series[key])
+    return 0.0
+
+
 def get_net_cash_ratio(ticker_symbol: str):
     """指定銘柄のネットキャッシュ比率を計算する"""
     try:
         ticker = yf.Ticker(ticker_symbol)
-        info = ticker.info
 
-        # 時価総額
-        market_cap = info.get("marketCap")
+        # 時価総額（fast_info経由 — ticker.infoより安定）
+        try:
+            market_cap = ticker.fast_info.market_cap
+        except Exception:
+            market_cap = None
         if not market_cap or market_cap <= 0:
             return None
 
-        # 現金・短期投資
-        cash = info.get("totalCash", 0) or 0
+        # 貸借対照表から現金・負債を取得
+        bs = ticker.balance_sheet
+        if bs is None or bs.empty:
+            return None
+        latest = bs.iloc[:, 0]
 
-        # 有利子負債（短期借入金 + 長期借入金）
-        total_debt = info.get("totalDebt", 0) or 0
+        cash = _get_value(latest, [
+            "Cash And Cash Equivalents",
+            "Cash Cash Equivalents And Short Term Investments",
+            "Cash And Short Term Investments",
+            "Cash",
+        ])
 
-        # ネットキャッシュ
+        total_debt = _get_value(latest, [
+            "Total Debt",
+            "Long Term Debt And Capital Lease Obligation",
+            "Long Term Debt",
+        ])
+        # Total Debtがない場合は長期＋短期を合算
+        if total_debt == 0:
+            total_debt = _get_value(latest, [
+                "Current Debt And Capital Lease Obligation",
+                "Current Debt",
+                "Short Term Debt",
+            ])
+
+        # 企業名（取得失敗してもスキップしない）
+        name = ticker_symbol
+        try:
+            name = ticker.info.get("longName", ticker_symbol)
+        except Exception:
+            pass
+
+        try:
+            last_price = ticker.fast_info.last_price
+        except Exception:
+            last_price = None
+
         net_cash = cash - total_debt
         net_cash_ratio = net_cash / market_cap
 
         return {
             "ticker": ticker_symbol,
-            "name": info.get("longName", ticker_symbol),
-            "market_cap_B": round(market_cap / 1e8, 1),   # 億円
-            "cash_B": round(cash / 1e8, 1),                # 億円
-            "total_debt_B": round(total_debt / 1e8, 1),    # 億円
-            "net_cash_B": round(net_cash / 1e8, 1),        # 億円
-            "net_cash_ratio": round(net_cash_ratio * 100, 1),  # %
-            "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
-            "sector": info.get("sector", "不明"),
+            "name": name,
+            "market_cap_B": round(market_cap / 1e8, 1),
+            "cash_B": round(cash / 1e8, 1),
+            "total_debt_B": round(total_debt / 1e8, 1),
+            "net_cash_B": round(net_cash / 1e8, 1),
+            "net_cash_ratio": round(net_cash_ratio * 100, 1),
+            "current_price": last_price,
+            "sector": "不明",
         }
 
     except Exception as e:
